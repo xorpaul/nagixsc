@@ -32,6 +32,7 @@ import subprocess
 import sys
 import time
 import urllib2
+import multiprocessing.pool
 
 def debug(level, verb, string):
 	if level <= verb:
@@ -210,15 +211,24 @@ def conf2dict(config, opt_host=None, opt_service=None):
 			else:
 				services = []
 
+                # Create a ThreadPool with one thread for each service check
+                # Then let each thread fork the actual check process asynchronously
+                pool = multiprocessing.pool.ThreadPool(processes=len(services)-1)
+                async_results = []
 		for service in services:
 			# If option starts with '_' it may be a NagixSC option in the future
 			if service[0] != '_':
 				cmdline = config.get(host, service)
+                                async_results.append(pool.apply_async(exec_check, (host_name, service, cmdline, cmdprefix, timeout, timeout_returncode)))
 
-				check = exec_check(host_name, service, cmdline, cmdprefix, timeout, timeout_returncode)
-				if add_pnp4nagios_template_hint and '|' in check['output']:
-					check['output'] += ' [%s]' % check['command']
-				checks.append(check)
+                
+
+                # Gather each check result
+                for async_result in async_results:
+                        check = async_result.get()
+                        if add_pnp4nagios_template_hint and '|' in check['output']:
+                                check['output'] += ' [%s]' % check['command']
+                        checks.append(check)
 
 	return checks
 
