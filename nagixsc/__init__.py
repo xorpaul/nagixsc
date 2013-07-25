@@ -180,6 +180,15 @@ def conf2dict(config, opt_host=None, opt_service=None):
 		else:
 			hosts = []
 
+	# This additional loop is necessary to sum up all service checks on all hosts
+	number_of_services = 0
+	for host in hosts:
+		services = config.options(host)
+		number_of_services += len(services)
+
+	# Create a ThreadPool with one thread for each service check
+	pool = multiprocessing.pool.ThreadPool(processes=number_of_services)
+
 	for host in hosts:
 		# Overwrite section/host name with '_host_name'
 		if config.has_option(host,'_host_name'):
@@ -211,9 +220,7 @@ def conf2dict(config, opt_host=None, opt_service=None):
 			else:
 				services = []
 
-                # Create a ThreadPool with one thread for each service check
                 # Then let each thread fork the actual check process asynchronously
-                pool = multiprocessing.pool.ThreadPool(processes=len(services)-1)
                 async_results = []
 		for service in services:
 			# If option starts with '_' it may be a NagixSC option in the future
@@ -223,7 +230,9 @@ def conf2dict(config, opt_host=None, opt_service=None):
 
                 
 
-                # Gather each check result
+		
+	# Gather each check result
+	for host in hosts:
                 for async_result in async_results:
                         check = async_result.get()
                         if add_pnp4nagios_template_hint and '|' in check['output']:
